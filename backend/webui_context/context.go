@@ -6,13 +6,13 @@
 package webui_context
 
 import (
-	"fmt"
 	"reflect"
 	"sort"
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/omec-project/openapi/v2/models"
+	openapiutils "github.com/omec-project/openapi/v2/utils"
 	"github.com/omec-project/webconsole/backend/logger"
 	"github.com/omec-project/webconsole/dbadapter"
 )
@@ -77,29 +77,23 @@ func (context *WEBUIContext) NfProfileAlreadyExists(nfProfile models.NFProfile) 
 	return false
 }
 
-func getNfOamUri(nfProfile models.NFProfile, serviceName models.ServiceName) (nfOamUri string) {
+// getNfOamUri returns the base URI (scheme://host:port, an IPv6 host in
+// brackets) of the first registered service serviceName of nfProfile, or ""
+// when the profile has none. The services are taken in nfProfileServices
+// order; for each, openapiutils.NFServiceURI takes the address from the
+// profile or service fqdn, the apiPrefix, an ipEndPoint or the profile
+// addresses, in that order. Webconsole has no address family of its own,
+// so IPv4 is used when the NF offers both.
+func getNfOamUri(nfProfile models.NFProfile, serviceName models.ServiceName) string {
 	for _, service := range nfProfileServices(nfProfile) {
-		if service.ServiceName == serviceName && service.NfServiceStatus == models.NFSERVICESTATUS_REGISTERED {
-			if nfProfile.GetFqdn() != "" {
-				nfOamUri = nfProfile.GetFqdn()
-			} else if service.GetFqdn() != "" {
-				nfOamUri = service.GetFqdn()
-			} else if service.GetApiPrefix() != "" {
-				nfOamUri = service.GetApiPrefix()
-			} else if len(service.IpEndPoints) > 0 {
-				point := service.IpEndPoints[0]
-				if point.GetIpv4Address() != "" {
-					nfOamUri = getSbiUri(service.Scheme, point.GetIpv4Address(), point.GetPort())
-				} else if len(nfProfile.Ipv4Addresses) != 0 {
-					nfOamUri = getSbiUri(service.Scheme, nfProfile.Ipv4Addresses[0], point.GetPort())
-				}
-			}
+		if service.ServiceName != serviceName || service.NfServiceStatus != models.NFSERVICESTATUS_REGISTERED {
+			continue
 		}
-		if nfOamUri != "" {
-			break
+		if uri := openapiutils.NFServiceURI(&nfProfile, &service, false); uri != "" {
+			return uri
 		}
 	}
-	return
+	return ""
 }
 
 // nfProfileServices returns the profile's services, merging the deprecated NfServices
@@ -164,18 +158,4 @@ func decode(source any, format string) ([]models.NFProfile, error) {
 		return nil, err
 	}
 	return target, nil
-}
-
-func getSbiUri(scheme models.UriScheme, ipv4Address string, port int32) (uri string) {
-	if port != 0 {
-		uri = fmt.Sprintf("%s://%s:%d", scheme, ipv4Address, port)
-	} else {
-		switch scheme {
-		case models.URISCHEME_HTTP:
-			uri = fmt.Sprintf("%s://%s:80", scheme, ipv4Address)
-		case models.URISCHEME_HTTPS:
-			uri = fmt.Sprintf("%s://%s:443", scheme, ipv4Address)
-		}
-	}
-	return
 }
