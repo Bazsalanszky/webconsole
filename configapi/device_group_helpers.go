@@ -349,6 +349,7 @@ func syncDeviceGroupSubscriber(devGroup *configmodels.DeviceGroups, prevDevGroup
 	}
 
 	aggregatedQoS := aggregateQoS(allQosProfiles)
+	sessionTypes := pduSessionTypesByDnn(devGroup.IpDomainsExpanded)
 	for i, imsi := range devGroup.Imsis {
 		/* update all current IMSIs */
 		if subscriberAuthenticationDataGet("imsi-"+imsi) != nil {
@@ -361,6 +362,7 @@ func syncDeviceGroupSubscriber(devGroup *configmodels.DeviceGroups, prevDevGroup
 				gpsi,
 				snssai,
 				dnnMap,
+				sessionTypes,
 				mcc,
 				mnc,
 				aggregatedQoS,
