@@ -701,6 +701,7 @@ func processDeviceGroup(devGroupConfig *configmodels.DeviceGroups, snssai *model
 	}
 	// Calculate aggregate QoS once for the entire group
 	aggregatedQoS := aggregateQoS(allQosProfiles)
+	sessionTypes := pduSessionTypesByDnn(devGroupConfig.IpDomainsExpanded)
 	for i, imsi := range devGroupConfig.Imsis {
 		if subscriberAuthenticationDataGet("imsi-"+imsi) != nil {
 			// Process each IP domain for this IMSI
@@ -715,6 +716,7 @@ func processDeviceGroup(devGroupConfig *configmodels.DeviceGroups, snssai *model
 				gpsi,
 				snssai,
 				dnnMap,
+				sessionTypes,
 				mcc,
 				mnc,
 				aggregatedQoS,
@@ -751,7 +753,7 @@ func cleanupDeviceGroups(slice, prevSlice configmodels.Slice) error {
 	return nil
 }
 
-func updatePolicyAndProvisionedData(imsi string, gpsi string, snssai *models.Snssai, dnnMap map[string][]configmodels.DeviceGroupsIpDomainExpandedUeDnnQos, mcc string, mnc string, aggregatedQoS configmodels.DeviceGroupsIpDomainExpandedUeDnnQos) error {
+func updatePolicyAndProvisionedData(imsi string, gpsi string, snssai *models.Snssai, dnnMap map[string][]configmodels.DeviceGroupsIpDomainExpandedUeDnnQos, sessionTypes map[string]dnnPduSessionTypes, mcc string, mnc string, aggregatedQoS configmodels.DeviceGroupsIpDomainExpandedUeDnnQos) error {
 	err := updateAmPolicyData(imsi)
 	if err != nil {
 		return fmt.Errorf("updateAmPolicyData failed: %w", err)
@@ -764,7 +766,7 @@ func updatePolicyAndProvisionedData(imsi string, gpsi string, snssai *models.Sns
 	if err != nil {
 		return fmt.Errorf("updateAmProvisionedData failed: %w", err)
 	}
-	err = updateSmProvisionedData(snssai, dnnMap, mcc, mnc, imsi)
+	err = updateSmProvisionedData(snssai, dnnMap, sessionTypes, mcc, mnc, imsi)
 	if err != nil {
 		return fmt.Errorf("updateSmProvisionedData failed: %w", err)
 	}
@@ -849,13 +851,13 @@ func updateAmProvisionedData(gpsi string, snssai *models.Snssai, aggregatedQoS c
 	return nil
 }
 
-func updateSmProvisionedData(snssai *models.Snssai, dnnMap map[string][]configmodels.DeviceGroupsIpDomainExpandedUeDnnQos, mcc, mnc, imsi string) error {
+func updateSmProvisionedData(snssai *models.Snssai, dnnMap map[string][]configmodels.DeviceGroupsIpDomainExpandedUeDnnQos, sessionTypes map[string]dnnPduSessionTypes, mcc, mnc, imsi string) error {
 	filter := bson.M{
 		ueIdKey:          "imsi-" + imsi,
 		servingPlmnIdKey: mcc + mnc,
 	}
 
-	smDataBsonA, err := buildSmProvisionedDataDocument(snssai, dnnMap, mcc, mnc, imsi)
+	smDataBsonA, err := buildSmProvisionedDataDocument(snssai, dnnMap, sessionTypes, mcc, mnc, imsi)
 	if err != nil {
 		return err
 	}
@@ -870,7 +872,53 @@ func updateSmProvisionedData(snssai *models.Snssai, dnnMap map[string][]configmo
 	return nil
 }
 
-func buildSmProvisionedDataDocument(snssai *models.Snssai, dnnMap map[string][]configmodels.DeviceGroupsIpDomainExpandedUeDnnQos, mcc, mnc, imsi string) (map[string]any, error) {
+// dnnPduSessionTypes is the pduSessionTypes of one DNN configuration in the SM
+// subscription data (TS 29.503 PduSessionTypes). The SMF reads it from the UDM
+// and accepts a requested PDU session type only if allowed covers it.
+type dnnPduSessionTypes struct {
+	defaultType models.PduSessionType
+	allowed     []models.PduSessionType
+}
+
+// pduSessionTypesByDnn derives the subscribed PDU session types of each DNN
+// from a device group's IP domains, for the DNNs that have an IPv6 pool:
+//   - an IPv6 and an IPv4 pool: IPv4 by default, IPv4, IPv6 and IPv4v6 allowed;
+//   - an IPv6 pool only: IPv6 by default and the only type allowed, since an
+//     allowed IPv4v6 would let the SMF accept IPv4 with no IPv4 pool.
+//
+// Every other DNN is absent and stays IPv4 only, as before IPv6 pools existed.
+func pduSessionTypesByDnn(ipDomains []configmodels.DeviceGroupsIpDomainExpanded) map[string]dnnPduSessionTypes {
+	hasIPv4 := make(map[string]bool)
+	hasIPv6 := make(map[string]bool)
+	for _, ipDomain := range ipDomains {
+		if ipDomain.UeIpPool != "" {
+			hasIPv4[ipDomain.Dnn] = true
+		}
+		if ipDomain.UeIpv6Pool != "" {
+			hasIPv6[ipDomain.Dnn] = true
+		}
+	}
+	sessionTypes := make(map[string]dnnPduSessionTypes, len(hasIPv6))
+	for dnn := range hasIPv6 {
+		if hasIPv4[dnn] {
+			sessionTypes[dnn] = dnnPduSessionTypes{
+				defaultType: models.PDUSESSIONTYPE_IPV4,
+				allowed:     []models.PduSessionType{models.PDUSESSIONTYPE_IPV4, models.PDUSESSIONTYPE_IPV6, models.PDUSESSIONTYPE_IPV4_V6},
+			}
+		} else {
+			sessionTypes[dnn] = dnnPduSessionTypes{
+				defaultType: models.PDUSESSIONTYPE_IPV6,
+				allowed:     []models.PduSessionType{models.PDUSESSIONTYPE_IPV6},
+			}
+		}
+	}
+	return sessionTypes
+}
+
+// buildSmProvisionedDataDocument builds the SM subscription data of one
+// subscriber. A DNN missing from sessionTypes (or a nil sessionTypes) gets
+// IPv4 as its default and only allowed PDU session type.
+func buildSmProvisionedDataDocument(snssai *models.Snssai, dnnMap map[string][]configmodels.DeviceGroupsIpDomainExpandedUeDnnQos, sessionTypes map[string]dnnPduSessionTypes, mcc, mnc, imsi string) (map[string]any, error) {
 	dnnConfigurations := make(map[string]any, len(dnnMap))
 
 	for dnn, ueDnnQosList := range dnnMap {
@@ -880,10 +928,17 @@ func buildSmProvisionedDataDocument(snssai *models.Snssai, dnnMap map[string][]c
 			return nil, fmt.Errorf("traffic class missing for DNN %s", dnn)
 		}
 
+		pduSessionTypes, ok := sessionTypes[dnn]
+		if !ok {
+			pduSessionTypes = dnnPduSessionTypes{
+				defaultType: models.PDUSESSIONTYPE_IPV4,
+				allowed:     []models.PduSessionType{models.PDUSESSIONTYPE_IPV4},
+			}
+		}
 		dnnConfigurations[dnn] = map[string]any{
 			"pduSessionTypes": map[string]any{
-				"defaultSessionType":  models.PDUSESSIONTYPE_IPV4,
-				"allowedSessionTypes": []models.PduSessionType{models.PDUSESSIONTYPE_IPV4},
+				"defaultSessionType":  pduSessionTypes.defaultType,
+				"allowedSessionTypes": slices.Clone(pduSessionTypes.allowed),
 			},
 			"sscModes": map[string]any{
 				"defaultSscMode":  models.SSCMODE_SSC_MODE_1,
