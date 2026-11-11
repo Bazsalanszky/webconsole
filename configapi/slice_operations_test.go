@@ -915,7 +915,7 @@ func TestBuildSmProvisionedDataDocument(t *testing.T) {
 		},
 	}
 
-	doc, err := buildSmProvisionedDataDocument(snssai, dnnMap, "208", "93", "208930100007487")
+	doc, err := buildSmProvisionedDataDocument(snssai, dnnMap, nil, "208", "93", "208930100007487")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -984,7 +984,7 @@ func TestUpdateSmProvisionedData_UsesPutOne(t *testing.T) {
 		},
 	}
 
-	if err := updateSmProvisionedData(snssai, dnnMap, "208", "93", "208930100007487"); err != nil {
+	if err := updateSmProvisionedData(snssai, dnnMap, nil, "208", "93", "208930100007487"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(mock.postData) != 0 {

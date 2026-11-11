@@ -5,6 +5,7 @@ package configapi
 
 import (
 	"math"
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
@@ -29,6 +30,13 @@ func isValidFQDN(fqdn string) bool {
 		return false
 	}
 	return fqdnMatch
+}
+
+// isValidIPv6Address reports whether addr is an IPv6 address without a zone
+// that is not an IPv4-mapped IPv4 address.
+func isValidIPv6Address(addr string) bool {
+	ip, err := netip.ParseAddr(addr)
+	return err == nil && ip.Is6() && !ip.Is4In6() && ip.Zone() == ""
 }
 
 func isValidUpfPort(port string) bool {

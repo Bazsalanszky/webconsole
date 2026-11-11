@@ -283,6 +283,18 @@ func extractIpDomains(groupNames []string, deviceGroupMap map[string]configmodel
 			if ipDomainExp.PcscfPrimary != "" {
 				ip.SetPcscfIpv4(ipDomainExp.PcscfPrimary)
 			}
+			// The prefix length is sent explicitly, with the default applied, so
+			// that the SMF does not need to know webconsole's default.
+			if ipDomainExp.UeIpv6Pool != "" {
+				ip.SetUeSubnetIpv6(ipDomainExp.UeIpv6Pool)
+				ip.SetUeIpv6PrefixLength(ipDomainExp.EffectiveUeIpv6PrefixLen())
+			}
+			if ipDomainExp.DnsPrimaryV6 != "" {
+				ip.SetDnsIpv6(ipDomainExp.DnsPrimaryV6)
+			}
+			if ipDomainExp.PcscfPrimaryV6 != "" {
+				ip.SetPcscfIpv6(ipDomainExp.PcscfPrimaryV6)
+			}
 			ipDomains = append(ipDomains, *ip)
 		}
 	}

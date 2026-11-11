@@ -29,4 +29,33 @@ type DeviceGroupsIpDomainExpanded struct {
 	Mtu int32 `json:"mtu,omitempty"`
 
 	UeDnnQos *DeviceGroupsIpDomainExpandedUeDnnQos `json:"ue-dnn-qos,omitempty"`
+
+	// IPv6 pool in CIDR notation from which each IPv6 or IPv4v6 PDU session of
+	// this DNN gets one prefix of ue-ipv6-prefix-len bits. An IPv6-only DNN
+	// sets this and leaves out ue-ip-pool and dns-primary.
+	UeIpv6Pool string `json:"ue-ipv6-pool,omitempty"`
+
+	// Length of the prefix each session gets out of ue-ipv6-pool, from the
+	// pool's prefix length to 64. 64 when not set.
+	UeIpv6PrefixLen int32 `json:"ue-ipv6-prefix-len,omitempty"`
+
+	// IPv6 DNS server address sent to the UE.
+	DnsPrimaryV6 string `json:"dns-primary-v6,omitempty"`
+
+	// IPv6 P-CSCF address sent to the UE.
+	PcscfPrimaryV6 string `json:"pcscf-primary-v6,omitempty"`
+}
+
+// DefaultUeIpv6PrefixLen is the length of the prefix assigned to each PDU
+// session when UeIpv6PrefixLen is not set: one /64 per session, as TS 23.501
+// clause 5.8.2.2.1 describes for IPv6 stateless address autoconfiguration.
+const DefaultUeIpv6PrefixLen int32 = 64
+
+// EffectiveUeIpv6PrefixLen returns UeIpv6PrefixLen, or DefaultUeIpv6PrefixLen
+// when it is not set.
+func (d *DeviceGroupsIpDomainExpanded) EffectiveUeIpv6PrefixLen() int32 {
+	if d.UeIpv6PrefixLen == 0 {
+		return DefaultUeIpv6PrefixLen
+	}
+	return d.UeIpv6PrefixLen
 }

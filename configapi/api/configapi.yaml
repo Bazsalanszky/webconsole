@@ -186,6 +186,24 @@ components:
         mtu:
           example: 1460
           type: integer
+        ue-ipv6-pool:
+          description: IPv6 pool in CIDR notation from which each IPv6 or IPv4v6 PDU session of this DNN gets one prefix of ue-ipv6-prefix-len bits. An IPv6-only DNN sets this and leaves out ue-ip-pool and dns-primary.
+          example: 2001:db8:100::/56
+          type: string
+        ue-ipv6-prefix-len:
+          description: Length of the prefix each session gets out of ue-ipv6-pool, from the pool's prefix length to 64. 64 when not set.
+          example: 64
+          minimum: 1
+          maximum: 64
+          type: integer
+        dns-primary-v6:
+          description: IPv6 DNS server address sent to the UE.
+          example: 2001:4860:4860::8888
+          type: string
+        pcscf-primary-v6:
+          description: IPv6 P-CSCF address sent to the UE.
+          example: 2001:db8:10::10
+          type: string
         ue-dnn-qos:
           properties:
             dnn-mbr-uplink:

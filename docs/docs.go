@@ -1286,6 +1286,10 @@ const docTemplate = `{
                 "dns-primary": {
                     "type": "string"
                 },
+                "dns-primary-v6": {
+                    "description": "IPv6 DNS server address sent to the UE.",
+                    "type": "string"
+                },
                 "dns-secondary": {
                     "type": "string"
                 },
@@ -1295,11 +1299,23 @@ const docTemplate = `{
                 "pcscf-primary": {
                     "type": "string"
                 },
+                "pcscf-primary-v6": {
+                    "description": "IPv6 P-CSCF address sent to the UE.",
+                    "type": "string"
+                },
                 "ue-dnn-qos": {
                     "$ref": "#/definitions/configmodels.DeviceGroupsIpDomainExpandedUeDnnQos"
                 },
                 "ue-ip-pool": {
                     "type": "string"
+                },
+                "ue-ipv6-pool": {
+                    "description": "IPv6 pool in CIDR notation from which each IPv6 or IPv4v6 PDU session of\nthis DNN gets one prefix of ue-ipv6-prefix-len bits. An IPv6-only DNN\nsets this and leaves out ue-ip-pool and dns-primary.",
+                    "type": "string"
+                },
+                "ue-ipv6-prefix-len": {
+                    "description": "Length of the prefix each session gets out of ue-ipv6-pool, from the\npool's prefix length to 64. 64 when not set.",
+                    "type": "integer"
                 }
             }
         },
