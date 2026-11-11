@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -97,6 +98,13 @@ func deviceGroupPostHelper(requestDeviceGroup configmodels.DeviceGroups, groupNa
 		logger.ConfigLog.Infof("DNS Primary : %v", ipdomain.DnsPrimary)
 		logger.ConfigLog.Infof("DNS Secondary : %v", ipdomain.DnsSecondary)
 		logger.ConfigLog.Infof("IP MTU : %v", ipdomain.Mtu)
+		if ipdomain.UeIpv6Pool != "" || ipdomain.DnsPrimaryV6 != "" || ipdomain.PcscfPrimaryV6 != "" {
+			logger.ConfigLog.Infof("UE IPv6 Pool : %v, prefix length %d, DNS IPv6 : %v, P-CSCF IPv6 : %v",
+				ipdomain.UeIpv6Pool, ipdomain.EffectiveUeIpv6PrefixLen(), ipdomain.DnsPrimaryV6, ipdomain.PcscfPrimaryV6)
+		}
+		if err := validateIpDomainIPv6(ipdomain); err != nil {
+			return http.StatusBadRequest, fmt.Errorf("invalid IP domain for DNN %s in device group %s: %w", ipdomain.Dnn, groupName, err)
+		}
 		if ipdomain.UeDnnQos != nil {
 			if err := validateUeDnnQos(ipdomain.UeDnnQos, groupName, ipdomain.Dnn); err != nil {
 				return http.StatusBadRequest, err
@@ -195,6 +203,45 @@ func validateUeDnnQos(qos *configmodels.DeviceGroupsIpDomainExpandedUeDnnQos, gr
 	// traffic class is left to the existing handling of that case.
 	if qos.TrafficClass != nil && !isNonGbr5Qi(qos.TrafficClass.Qci) {
 		return fmt.Errorf("invalid traffic-class qci %d for DNN %s in device group %s: the subscribed default 5QI must be a standardized Non-GBR 5QI (5, 6, 7, 8, 9, 10, 69, 70, 79 or 80)", qos.TrafficClass.Qci, dnn, groupName)
+	}
+	return nil
+}
+
+// validateIpDomainIPv6 checks the IPv6 settings of an IP domain. All of them
+// are optional; an IP domain without them is unaffected.
+//   - ue-ipv6-pool is an IPv6 prefix in CIDR notation with no bits set after
+//     the prefix length;
+//   - ue-ipv6-prefix-len needs ue-ipv6-pool and lies between the pool's prefix
+//     length and 64 (64 when unset);
+//   - dns-primary-v6 and pcscf-primary-v6 are IPv6 addresses. They are sent to
+//     the UE in the 16-octet PCO containers, so an IPv4 address, also in its
+//     IPv4-mapped IPv6 form, and a zone are refused.
+func validateIpDomainIPv6(ipDomain *configmodels.DeviceGroupsIpDomainExpanded) error {
+	if ipDomain.UeIpv6Pool == "" {
+		if ipDomain.UeIpv6PrefixLen != 0 {
+			return fmt.Errorf("ue-ipv6-prefix-len %d is set without ue-ipv6-pool", ipDomain.UeIpv6PrefixLen)
+		}
+	} else {
+		pool, err := netip.ParsePrefix(ipDomain.UeIpv6Pool)
+		if err != nil || !pool.Addr().Is6() || pool.Addr().Is4In6() {
+			return fmt.Errorf("ue-ipv6-pool %q is not an IPv6 prefix in CIDR notation", ipDomain.UeIpv6Pool)
+		}
+		if pool.Masked() != pool {
+			return fmt.Errorf("ue-ipv6-pool %q has bits set after its prefix length, the pool is %s", ipDomain.UeIpv6Pool, pool.Masked())
+		}
+		prefixLen := ipDomain.EffectiveUeIpv6PrefixLen()
+		if prefixLen < int32(pool.Bits()) || prefixLen > configmodels.DefaultUeIpv6PrefixLen {
+			return fmt.Errorf("ue-ipv6-prefix-len %d is outside %d (the ue-ipv6-pool prefix length) to %d",
+				prefixLen, pool.Bits(), configmodels.DefaultUeIpv6PrefixLen)
+		}
+	}
+	for _, field := range []struct{ name, value string }{
+		{"dns-primary-v6", ipDomain.DnsPrimaryV6},
+		{"pcscf-primary-v6", ipDomain.PcscfPrimaryV6},
+	} {
+		if field.value != "" && !isValidIPv6Address(field.value) {
+			return fmt.Errorf("%s %q is not an IPv6 address", field.name, field.value)
+		}
 	}
 	return nil
 }
