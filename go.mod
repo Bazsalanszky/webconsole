@@ -78,3 +78,5 @@ require (
 	golang.org/x/tools v0.53.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
+
+replace github.com/omec-project/openapi/v2 => github.com/Bazsalanszky/openapi/v2 v2.4.2-0.20261121092913-4a62c715dc67
